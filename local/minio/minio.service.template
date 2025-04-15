@@ -7,11 +7,11 @@ User=root
 Group=root
 ExecStart=/usr/local/bin/minio server --address :4000 --console-address :4001 /mnt/minio/data
 WorkingDirectory=/mnt/minio
-Environment="MINIO_ROOT_USER=dbrss"
-Environment="MINIO_ROOT_PASSWORD=duelo_battleground_rss"
+Environment="MINIO_ROOT_USER=${minio_user}"
+Environment="MINIO_ROOT_PASSWORD=${minio_password}"
 Environment="MINIO_BROWSER_REDIRECT_URL=http://storage.${domain_name}"
-Environment="MINIO_SERVER_URL=http://storage-api.{{domain_name}}"
-Environment="MINIO_STORAGE_SIZE=50G"
+Environment="MINIO_SERVER_URL=http://storage-api.${domain_name}"
+Environment="MINIO_STORAGE_SIZE=${minio_gb_capacity}G"
 Environment="MINIO_MAX_REQUEST_SIZE=104857600"  # 100MB file size limit
 LimitNOFILE=65536
 Restart=always

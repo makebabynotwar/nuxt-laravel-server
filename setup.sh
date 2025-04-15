@@ -11,6 +11,16 @@ validate_domain() {
     fi
 }
 
+# Function to validate numeric input
+validate_numeric() {
+    local input=$1
+    if [[ $input =~ ^[0-9]+$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Step 1: Choose an Environment
 environment=$(whiptail --title "Choose an Environment" --nocancel --menu "Select an environment:" 15 50 3 \
 "1" "local" \
@@ -120,15 +130,18 @@ if [ $exitstatus = 0 ]; then
     export domain_name
     export laravel_app_path
 
+    # Set php_version variable
+    php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    export php_version
+
     # Step 8: Read and process templates
     if [[ "$choices" == *"php-fpm"* ]]; then
         # Set up PHP-FPM load balancer
-        php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
         sudo cp /etc/php/$php_version/fpm/pool.d/www.conf /etc/php/$php_version/fpm/pool.d/www2.conf
 
         # Process PHP-FPM pool configurations
-        www_template="./local/php-fpm/www.conf.template"
-        www2_template="./local/php-fpm/www2.conf.template"
+        www_template="./$environment/php-fpm/www.conf.template"
+        www2_template="./$environment/php-fpm/www2.conf.template"
 
         if [ ! -f "$www_template" ] || [ ! -f "$www2_template" ]; then
             echo "One or both PHP-FPM template files are missing. Please check: $www_template and $www2_template"
@@ -214,9 +227,176 @@ if [ $exitstatus = 0 ]; then
 
     echo "✅ Nginx configuration for $domain_name has been set up and activated."
 
-    # Step 14: Add domains to /etc/hosts if environment is local
+    # Step 14: MinIO setup
+    if [[ "$choices" == *"minio"* ]]; then
+        if systemctl is-active --quiet minio; then
+            if (whiptail --title "MinIO Reconfiguration" --yesno "MinIO is already up and running. Would you like to reconfigure?" 8 50); then
+                # Prompt for MinIO storage capacity
+                while true; do
+                    minio_gb_capacity=$(whiptail --title "MinIO Storage Capacity" --inputbox "Enter the storage capacity for MinIO (in GB):" 8 50 "" 3>&1 1>&2 2>&3)
+                    if [ -z "$minio_gb_capacity" ]; then
+                        whiptail --title "Error" --msgbox "Storage capacity is required. Please enter a valid number." 8 50
+                    elif ! validate_numeric "$minio_gb_capacity"; then
+                        whiptail --title "Error" --msgbox "Invalid input. Please enter a valid number." 8 50
+                    else
+                        break
+                    fi
+                done
+
+                # Prompt for MinIO username
+                while true; do
+                    minio_user=$(whiptail --title "MinIO Username" --inputbox "Enter the MinIO username:" 8 50 "" 3>&1 1>&2 2>&3)
+                    if [ -z "$minio_user" ]; then
+                        whiptail --title "Error" --msgbox "Username is required. Please enter a valid username." 8 50
+                    else
+                        break
+                    fi
+                done
+
+                # Prompt for MinIO password and confirmation
+                while true; do
+                    minio_password=$(whiptail --title "MinIO Password" --passwordbox "Enter the MinIO password:" 8 50 "" 3>&1 1>&2 2>&3)
+                    minio_password_confirm=$(whiptail --title "MinIO Password Confirmation" --passwordbox "Confirm the MinIO password:" 8 50 "" 3>&1 1>&2 2>&3)
+                    if [ -z "$minio_password" ] || [ -z "$minio_password_confirm" ]; then
+                        whiptail --title "Error" --msgbox "Password is required. Please enter a valid password." 8 50
+                    elif [ "$minio_password" != "$minio_password_confirm" ]; then
+                        whiptail --title "Error" --msgbox "Passwords do not match. Please try again." 8 50
+                    else
+                        break
+                    fi
+                done
+
+                # Set environment variables for MinIO
+                export minio_user
+                export minio_password
+                export minio_gb_capacity
+
+                # Process MinIO service template
+                minio_service_template="./$environment/minio/minio.service.template"
+                if [ ! -f "$minio_service_template" ]; then
+                    echo "MinIO service template file is missing. Please check: $minio_service_template"
+                    exit 1
+                fi
+
+                minio_service_config=$(envsubst '${minio_user},${minio_password},${domain_name},${minio_gb_capacity}' < "$minio_service_template")
+                echo "$minio_service_config" | sudo tee /etc/systemd/system/minio.service > /dev/null
+
+                # Restart MinIO service
+                sudo systemctl daemon-reload
+
+                sudo systemctl restart minio
+
+                echo "✅ MinIO has been reconfigured and restarted."
+            else
+                echo "Skipping MinIO reconfiguration."
+            fi
+        else
+            # Install MinIO if not already installed
+            if ! command -v minio &> /dev/null; then
+                wget https://dl.min.io/server/minio/release/linux-amd64/minio
+                chmod +x minio
+                sudo mv minio /usr/local/bin/
+
+                sudo mkdir -p /mnt/minio/data
+                sudo chown -R $USER:$USER /mnt/minio
+            fi
+
+            # Prompt for MinIO storage capacity
+            while true; do
+                minio_gb_capacity=$(whiptail --title "MinIO Storage Capacity" --inputbox "Enter the storage capacity for MinIO (in GB):" 8 50 "" 3>&1 1>&2 2>&3)
+                if [ -z "$minio_gb_capacity" ]; then
+                    whiptail --title "Error" --msgbox "Storage capacity is required. Please enter a valid number." 8 50
+                elif ! validate_numeric "$minio_gb_capacity"; then
+                    whiptail --title "Error" --msgbox "Invalid input. Please enter a valid number." 8 50
+                else
+                    break
+                fi
+            done
+
+            # Prompt for MinIO username
+            while true; do
+                minio_user=$(whiptail --title "MinIO Username" --inputbox "Enter the MinIO username:" 8 50 "" 3>&1 1>&2 2>&3)
+                if [ -z "$minio_user" ]; then
+                    whiptail --title "Error" --msgbox "Username is required. Please enter a valid username." 8 50
+                else
+                    break
+                fi
+            done
+
+            # Prompt for MinIO password and confirmation
+            while true; do
+                minio_password=$(whiptail --title "MinIO Password" --passwordbox "Enter the MinIO password:" 8 50 "" 3>&1 1>&2 2>&3)
+                minio_password_confirm=$(whiptail --title "MinIO Password Confirmation" --passwordbox "Confirm the MinIO password:" 8 50 "" 3>&1 1>&2 2>&3)
+                if [ -z "$minio_password" ] || [ -z "$minio_password_confirm" ]; then
+                    whiptail --title "Error" --msgbox "Password is required. Please enter a valid password." 8 50
+                elif [ "$minio_password" != "$minio_password_confirm" ]; then
+                    whiptail --title "Error" --msgbox "Passwords do not match. Please try again." 8 50
+                else
+                    break
+                fi
+            done
+
+            # Set environment variables for MinIO
+            export minio_user
+            export minio_password
+            export minio_gb_capacity
+
+            # Process MinIO service template
+            minio_service_template="./$environment/minio/minio.service.template"
+            if [ ! -f "$minio_service_template" ]; then
+                echo "MinIO service template file is missing. Please check: $minio_service_template"
+                exit 1
+            fi
+
+            minio_service_config=$(envsubst '${minio_user},${minio_password},${domain_name},${minio_gb_capacity}' < "$minio_service_template")
+            echo "$minio_service_config" | sudo tee /etc/systemd/system/minio.service > /dev/null
+
+            # Enable and start MinIO service
+            sudo systemctl enable minio
+            sudo systemctl start minio
+
+            # Process MinIO Nginx templates
+            minio_api_template="./$environment/nginx/minio-api.conf.template"
+            minio_console_template="./$environment/nginx/minio-console.conf.template"
+
+            if [ ! -f "$minio_api_template" ] || [ ! -f "$minio_console_template" ]; then
+                echo "One or both MinIO Nginx template files are missing. Please check: $minio_api_template and $minio_console_template"
+                exit 1
+            fi
+
+            minio_api_config=$(envsubst '${domain_name}' < "$minio_api_template")
+            minio_console_config=$(envsubst '${domain_name}' < "$minio_console_template")
+
+            # Save MinIO Nginx configs
+            minio_api_config_path="/etc/nginx/sites-available/storage-api.$domain_name"
+            minio_console_config_path="/etc/nginx/sites-available/storage.$domain_name"
+            echo "$minio_api_config" | sudo tee "$minio_api_config_path" > /dev/null
+            echo "$minio_console_config" | sudo tee "$minio_console_config_path" > /dev/null
+
+                        # Create symlinks if they don’t exist
+            if [ ! -L "/etc/nginx/sites-enabled/storage-api.$domain_name" ]; then
+                sudo ln -s "$minio_api_config_path" "/etc/nginx/sites-enabled/storage-api.$domain_name"
+            fi
+            if [ ! -L "/etc/nginx/sites-enabled/storage.$domain_name" ]; then
+                sudo ln -s "$minio_console_config_path" "/etc/nginx/sites-enabled/storage.$domain_name"
+            fi
+
+            # Test Nginx config
+            if ! sudo nginx -t; then
+                echo "❌ Nginx configuration test failed. Please fix the errors above."
+                exit 1
+            fi
+
+            # Reload Nginx
+            sudo systemctl reload nginx
+
+            echo "✅ MinIO configuration for $domain_name has been set up and activated."
+        fi
+    fi
+
+    # Step 15: Add domains to /etc/hosts if environment is local
     if [ "$environment" == "local" ]; then
-        local_domains=("local.$domain_name" "local-api.$domain_name")
+        local_domains=("local.$domain_name" "local-api.$domain_name" "storage.$domain_name" "storage-api.$domain_name")
         for domain in "${local_domains[@]}"; do
             if ! grep -q "$domain" /etc/hosts; then
                 echo "127.0.0.1 $domain" | sudo tee -a /etc/hosts > /dev/null
