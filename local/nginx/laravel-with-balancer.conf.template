@@ -1,9 +1,3 @@
-upstream pool_php_fpm {
-    least_conn;
-    server unix:/run/php/php${php_version}-fpm-www.sock;
-    server unix:/run/php/php${php_version}-fpm-www2.sock;
-}
-
 server {
     listen 80;
     server_name local-api.${domain_name};

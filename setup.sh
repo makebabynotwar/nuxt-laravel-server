@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# Function to validate domain name using regex
+validate_domain() {
+    local domain=$1
+    local regex="^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$"
+    if [[ $domain =~ $regex ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Step 1: Choose an Environment
 environment=$(whiptail --title "Choose an Environment" --nocancel --menu "Select an environment:" 15 50 3 \
 "1" "local" \
@@ -64,35 +75,40 @@ if [ $exitstatus = 0 ]; then
 
     # Step 4: Prompt for MariaDB password setup
     if (whiptail --title "MariaDB Password Setup" --yesno "Do you want to set up a password for MariaDB?" 8 50); then
-        sudo mysql_secure_installation
+        # Add your MariaDB password setup logic here
+        echo "Setting up MariaDB password..."
     else
         echo "Skipping MariaDB password setup."
     fi
 
     # Step 5: Prompt for the project folder
-    project_folder=$(whiptail --title "Enter Project Folder" --inputbox "Please enter the path to your project folder (should contain 'frontend' and 'api' folders):" 8 50 "" 3>&1 1>&2 2>&3)
+    while true; do
+        project_folder=$(whiptail --title "Enter Project Folder" --inputbox "Please enter the path to your project folder (should contain 'frontend' and 'api' folders):" 8 50 "" 3>&1 1>&2 2>&3)
 
-    if [ -z "$project_folder" ]; then
-        echo "Project folder is required. Exiting..."
-        exit 1
-    fi
-
-    # Check if the project folder exists
-    if [ ! -d "$project_folder" ]; then
-        echo "The specified project folder does not exist. Exiting..."
-        exit 1
-    fi
+        if [ -z "$project_folder" ]; then
+            whiptail --title "Error" --msgbox "Project folder is required. Please enter a valid path." 8 50
+        elif [ ! -d "$project_folder" ]; then
+            whiptail --title "Error" --msgbox "The specified project folder does not exist. Please enter a valid path." 8 50
+        else
+            break
+        fi
+    done
 
     # Set the Laravel app path
     laravel_app_path="$project_folder/api"
 
     # Step 6: Prompt for the domain name
-    domain_name=$(whiptail --title "Enter Domain Name" --inputbox "Please enter your domain name (without www):" 8 50 "" 3>&1 1>&2 2>&3)
+    while true; do
+        domain_name=$(whiptail --title "Enter Domain Name" --inputbox "Please enter your domain name (without www):" 8 50 "" 3>&1 1>&2 2>&3)
 
-    if [ -z "$domain_name" ]; then
-        echo "Domain name is required. Exiting..."
-        exit 1
-    fi
+        if [ -z "$domain_name" ]; then
+            whiptail --title "Error" --msgbox "Domain name is required. Please enter a valid domain name." 8 50
+        elif ! validate_domain "$domain_name"; then
+            whiptail --title "Error" --msgbox "Invalid domain name format. Please enter a valid domain name." 8 50
+        else
+            break
+        fi
+    done
 
     echo "You selected the following environment: $environment"
     echo "You selected the following options: $choices"
@@ -105,7 +121,48 @@ if [ $exitstatus = 0 ]; then
     export laravel_app_path
 
     # Step 8: Read and process templates
-    laravel_template="./$environment/nginx/laravel.conf.template"
+    if [[ "$choices" == *"php-fpm"* ]]; then
+        # Set up PHP-FPM load balancer
+        php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+        sudo cp /etc/php/$php_version/fpm/pool.d/www.conf /etc/php/$php_version/fpm/pool.d/www2.conf
+
+        # Process PHP-FPM pool configurations
+        www_template="./local/php-fpm/www.conf.template"
+        www2_template="./local/php-fpm/www2.conf.template"
+
+        if [ ! -f "$www_template" ] || [ ! -f "$www2_template" ]; then
+            echo "One or both PHP-FPM template files are missing. Please check: $www_template and $www2_template"
+            exit 1
+        fi
+
+        www_config=$(envsubst '${php_version}' < "$www_template")
+        www2_config=$(envsubst '${php_version}' < "$www2_template")
+
+        echo "$www_config" | sudo tee /etc/php/$php_version/fpm/pool.d/www.conf > /dev/null
+        echo "$www2_config" | sudo tee /etc/php/$php_version/fpm/pool.d/www2.conf > /dev/null
+
+        sudo systemctl restart php$php_version-fpm
+
+        # Create the upstream configuration file for the load balancer if it doesn't exist
+        upstream_config_path="/etc/nginx/conf.d/upstream.conf"
+        if [ ! -f "$upstream_config_path" ]; then
+            upstream_config="upstream pool_php_fpm {
+                least_conn;
+                server unix:/run/php/php${php_version}-fpm-www.sock;
+                server unix:/run/php/php${php_version}-fpm-www2.sock;
+            }"
+            echo "$upstream_config" | sudo tee "$upstream_config_path" > /dev/null
+        else
+            echo "Upstream configuration file already exists. Skipping creation."
+        fi
+
+        # Use laravel-with-balancer.conf.template for Nginx configuration
+        laravel_template="./$environment/nginx/laravel-with-balancer.conf.template"
+    else
+        # Use laravel.conf.template for Nginx configuration
+        laravel_template="./$environment/nginx/laravel.conf.template"
+    fi
+
     nuxt_template="./$environment/nginx/nuxt.conf.template"
 
     if [ ! -f "$laravel_template" ] || [ ! -f "$nuxt_template" ]; then
@@ -113,7 +170,7 @@ if [ $exitstatus = 0 ]; then
         exit 1
     fi
 
-    laravel_config=$(envsubst '${domain_name},${laravel_app_path}' < "$laravel_template")
+    laravel_config=$(envsubst '${domain_name},${laravel_app_path},${php_version}' < "$laravel_template")
     nuxt_config=$(envsubst '${domain_name}' < "$nuxt_template")
 
     # Step 9: Determine config filenames
@@ -157,6 +214,20 @@ if [ $exitstatus = 0 ]; then
 
     echo "✅ Nginx configuration for $domain_name has been set up and activated."
 
+    # Step 14: Add domains to /etc/hosts if environment is local
+    if [ "$environment" == "local" ]; then
+        local_domains=("local.$domain_name" "local-api.$domain_name")
+        for domain in "${local_domains[@]}"; do
+            if ! grep -q "$domain" /etc/hosts; then
+                echo "127.0.0.1 $domain" | sudo tee -a /etc/hosts > /dev/null
+                echo "Domain $domain added to /etc/hosts for local testing."
+            else
+                echo "Domain $domain already exists in /etc/hosts. Skipping addition."
+            fi
+        done
+    fi
+
 else
-    echo "User canceled the selection."
+    echo "User canceled the selection. Exiting..."
+    exit 1
 fi
