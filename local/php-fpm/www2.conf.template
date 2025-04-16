@@ -1,9 +1,27 @@
+; Make sure the pool name is unique ([www2])
 [www2]
+; User and group the PHP processes will run as
 user = www-data
 group = www-data
+
+; Path to the *unique* socket file for this pool
 listen = /run/php/php${php_version}-fpm-www2.sock
+
+; === Add these lines for socket permissions ===
+; Owner for the socket file (should match Nginx user)
+listen.owner = www-data
+; Group for the socket file (should match Nginx user's group)
+listen.group = www-data
+; Permissions for the socket file (Read/Write for owner and group)
+listen.mode = 0660
+; ============================================
+
+; Process manager settings (can be same or different from [www] pool)
 pm = dynamic
 pm.max_children = 10
 pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 3
+
+; Optional: Clear environment variables for security
+; clear_env = no

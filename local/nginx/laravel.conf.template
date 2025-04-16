@@ -52,8 +52,8 @@ server {
     # }
 
     # Log files for debugging
-    access_log /var/log/nginx/${domain_name}.access.log;
-    error_log /var/log/nginx/${domain_name}.error.log;
+    access_log /var/log/nginx/laravel.${domain_name}.access.log;
+    error_log /var/log/nginx/laravel.${domain_name}.error.log;
 
     # Increase max upload size
     client_max_body_size 100M;

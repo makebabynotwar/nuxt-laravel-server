@@ -17,4 +17,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
     }
+
+    access_log /var/log/nginx/nuxt.${domain_name}.access.log;
+    error_log /var/log/nginx/nuxt.${domain_name}.error.log;
 }

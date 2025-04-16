@@ -1,8 +1,9 @@
 server {
     listen 80;
+    # Uses placeholder substituted by script's sed command
     server_name storage-api.${domain_name};
 
-    # Limit upload size to 100MB (adjust as needed)
+    # Limit upload size (adjust as needed)
     client_max_body_size 100M;
 
     # API-specific timeouts (adjust based on your needs)
@@ -12,18 +13,17 @@ server {
     send_timeout 300s;
 
     location / {
-        proxy_pass http://127.0.0.1:4000;
+        # Proxy to the standard MinIO API port (9000) defined in the corrected service file
+        proxy_pass http://127.0.0.1:9000;
 
-        # Standard headers
+        # Standard headers using Nginx variables (DO NOT ESCAPE $)
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host; # Important for MinIO
 
-        # Critical for APIs
-        proxy_set_header X-Forwarded-Host $host;
-
-        # WebSocket support (if your API uses it)
+        # WebSocket support (using Nginx variables)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -33,4 +33,7 @@ server {
         proxy_request_buffering off;
     }
 
+    # Optional: Add access/error logs specific to this API endpoint
+    access_log /var/log/nginx/minio-api.${domain_name}.access.log;
+    error_log /var/log/nginx/minio-api.${domain_name}.error.log;
 }

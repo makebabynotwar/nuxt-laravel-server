@@ -1,20 +1,44 @@
 [Unit]
-Description=MinIO Object Storage
+Description=MinIO Object Storage Server
 After=network.target
+Documentation=https://docs.min.io
 
 [Service]
-User=root
-Group=root
-ExecStart=/usr/local/bin/minio server --address :4000 --console-address :4001 /mnt/minio/data
-WorkingDirectory=/mnt/minio
+# Run as the dedicated Minio user created by the script
+User=minio-user
+Group=minio-user
+
+# Set working directory to the base data directory created by the script
+WorkingDirectory=/data/minio
+
+# --- Environment variables for MinIO ---
+# Credentials will be substituted by setup script using sed
+# IMPORTANT: These placeholders MUST match variables used in the script's sed command
 Environment="MINIO_ROOT_USER=${minio_user}"
 Environment="MINIO_ROOT_PASSWORD=${minio_password}"
+
+# Optional: Set browser redirect URL (useful for Nginx proxy)
+# Placeholder MUST match variable used in script's sed command
 Environment="MINIO_BROWSER_REDIRECT_URL=http://storage.${domain_name}"
-Environment="MINIO_SERVER_URL=http://storage-api.${domain_name}"
-Environment="MINIO_STORAGE_SIZE=${minio_gb_capacity}G"
-Environment="MINIO_MAX_REQUEST_SIZE=104857600"  # 100MB file size limit
-LimitNOFILE=65536
+
+# Optional: Set server URL if needed for specific features (e.g., KMS)
+# Environment="MINIO_SERVER_URL=http://storage-api.${domain_name}"
+# --- End Environment variables ---
+
+# Standard MinIO server arguments using standard ports and correct data path
+# Uses the data directory base created by the script
+ExecStart=/usr/local/bin/minio server --address :9000 --console-address :9001 /data/minio/data
+
+# Restart policy
 Restart=always
+RestartSec=5s
+
+# Resource limits (recommended)
+LimitNOFILE=65536
+
+# Standard output and error logging to journald
+StandardOutput=journal
+StandardError=inherit
 
 [Install]
 WantedBy=multi-user.target
