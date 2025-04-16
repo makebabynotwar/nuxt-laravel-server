@@ -1,7 +1,7 @@
 server {
     listen 80;
     # Uses placeholder substituted by script's sed command
-    server_name storage-api.${domain_name};
+    server_name local-storage-api.${domain_name};
 
     # Limit upload size (adjust as needed)
     client_max_body_size 100M;

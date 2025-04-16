@@ -1,7 +1,7 @@
 server {
     listen 80;
     # Uses placeholder substituted by script's sed command
-    server_name storage.${domain_name};
+    server_name local-storage.${domain_name};
 
     # Match API config or adjust as needed
     client_max_body_size 100M;

@@ -1,0 +1,22 @@
+[program:laravel-worker-${environment}] ; Use environment variable for unique name
+process_name=%(program_name)s_%(process_num)02d
+
+# Use the correct placeholder: ${laravel_app_path}
+# Added --max-time=3600 as a recommendation (adjust if needed)
+command=php ${laravel_app_path}/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+
+# Add the essential 'directory' directive
+directory=${laravel_app_path}
+
+autostart=true
+autorestart=true
+user=www-data ; Run as the web server user
+numprocs=1     ; Run a single worker process
+redirect_stderr=true
+
+# Use correct placeholder and environment-specific log filename
+stdout_logfile=${laravel_app_path}/storage/logs/worker-${environment}.log
+
+# Optional: Add log rotation settings
+; stdout_logfile_maxbytes=10MB
+; stdout_logfile_backups=10

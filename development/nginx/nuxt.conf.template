@@ -1,0 +1,34 @@
+# Configuration for Development Nuxt App (HTTP initially, Certbot will modify for HTTPS)
+server {
+    # Listens on port 80 for initial setup and Let's Encrypt challenges
+    listen 80;
+    # listen [::]:80; # Uncomment if IPv6 is needed
+
+    # Use 'dev' subdomain
+    server_name dev.${domain_name};
+
+    # Let's Encrypt ACME challenge location
+    # Needs a place Nginx can serve directly, separate from the proxy
+    location /.well-known/acme-challenge/ {
+        alias /var/www/letsencrypt/.well-known/acme-challenge/;
+        try_files $uri =404;
+    }
+
+    location / {
+        # Assuming Nuxt dev server runs on localhost:3000
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Log files using 'dev' prefix
+    access_log /var/log/nginx/dev.${domain_name}.access.log;
+    error_log /var/log/nginx/dev.${domain_name}.error.log;
+
+    # Certbot will add HTTPS directives and potentially a redirect here.
+}

@@ -1,0 +1,60 @@
+# Configuration for Development API with Balancer (HTTP initially, Certbot will modify for HTTPS)
+server {
+    # Listens on port 80 for initial setup and Let's Encrypt challenges
+    listen 80;
+    # listen [::]:80; # Uncomment if IPv6 is needed
+
+    # Use 'dev-api' subdomain
+    server_name dev-api.${domain_name};
+    root ${laravel_app_path}/public;
+
+    index index.php index.html;
+
+    # Add standard security/cache headers for API access logs
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Content-Type-Options "nosniff";
+
+    # Let's Encrypt ACME challenge location (Certbot needs this)
+    location /.well-known/acme-challenge/ {
+        root ${laravel_app_path}/public; # Or a dedicated webroot
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        # Use the PHP-FPM upstream pool defined in conf.d/
+        fastcgi_pass pool_php_fpm;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+
+        # Performance tweaks
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 60s;
+        fastcgi_read_timeout 60s;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg|eot|otf|ttc|mp4|webp|avif|json)$ {
+        expires 1d;
+        log_not_found off;
+        access_log off;
+    }
+
+    # Log files using 'dev' prefix
+    access_log /var/log/nginx/dev-api.${domain_name}.access.log;
+    error_log /var/log/nginx/dev-api.${domain_name}.error.log;
+
+    client_max_body_size 100M;
+
+    # Certbot will add HTTPS directives and potentially a redirect here.
+}

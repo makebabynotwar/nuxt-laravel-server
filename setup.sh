@@ -468,7 +468,7 @@ fi
 if [ "$environment" == "local" ]; then
     echo "Updating /etc/hosts for local environment..."
     local_domains=("local.$domain_name" "local-api.$domain_name")
-    if [[ "$choices" == *"minio"* ]]; then local_domains+=("storage.$domain_name" "storage-api.$domain_name"); fi
+    if [[ "$choices" == *"minio"* ]]; then local_domains+=("local-storage.$domain_name" "local-storage-api.$domain_name"); fi
     HOSTS_FILE="/etc/hosts"; TEMP_HOSTS=$(mktemp)
     exclude_pattern=$(printf '|\\b%s\\b' "${local_domains[@]}"); exclude_pattern=${exclude_pattern#|}; grep -vP "^\s*127\.0\.0\.1\s+.*(${exclude_pattern})" "$HOSTS_FILE" > "$TEMP_HOSTS"
     printf "127.0.0.1 %s\n" "${local_domains[@]}" >> "$TEMP_HOSTS"; echo "" >> "$TEMP_HOSTS"
@@ -503,7 +503,7 @@ echo "Project Root: $project_folder"
 minio_display_user="${minio_user:-minioadmin}" # Show default if var somehow unset
 if [ "$environment" == "local" ]; then
     echo ""; echo "Access URLs (local):"; echo "  Frontend: http://local.$domain_name"; echo "  API Base: http://local-api.$domain_name"
-     if [[ "$choices" == *"minio"* ]]; then echo "  Minio Console: http://storage.$domain_name"; echo "  Minio API: http://storage-api.$domain_name (User: ${minio_display_user})"; fi
+     if [[ "$choices" == *"minio"* ]]; then echo "  Minio Console: http://local-storage.$domain_name"; echo "  Minio API: http://local-storage-api.$domain_name"; fi
 fi
 # Add note about supervisor status check
 if [[ "$choices" == *"redis"* ]]; then
