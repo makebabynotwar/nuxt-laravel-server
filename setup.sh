@@ -506,7 +506,7 @@ if [ "$environment" == "local" ]; then
     newgrp "$WEB_USER"
     sudo chmod -R 775 "$project_folder"
     sudo chmod +x "/home/$CURRENT_USER"
-    echo "Setting up local api and database..."; 
+    echo "Installing project dependencies..."; 
     pushd "$project_folder/api" && composer install && popd
     pushd "$project_folder/frontend" && npm install && popd
     echo ""; echo "Access URLs (local):"; echo "  Frontend: http://local.$domain_name"; echo "  API Base: http://local-api.$domain_name"
