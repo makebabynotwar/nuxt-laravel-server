@@ -284,12 +284,12 @@ if [[ "$choices" == *"minio"* ]]; then
     if $minio_needs_install; then
         configure_minio=true
         echo "Installing MinIO server..."
-        MINIO_LATEST_URL=$(curl -s https://dl.min.io/server/minio/release/linux-amd64/minio.sha256sum | grep 'minio$' | head -n 1 | awk '{print $2}')
-        if [ -z "$MINIO_LATEST_URL" ]; then echo "Error: Could not fetch latest Minio URL."; exit 1; fi
-        echo "Downloading Minio: ${MINIO_LATEST_URL}"
-        wget "https://dl.min.io/server/minio/release/linux-amd64/${MINIO_LATEST_URL}" -O minio_download
-        sudo chmod +x minio_download; sudo mv minio_download /usr/local/bin/minio
+        wget https://dl.min.io/server/minio/release/linux-amd64/minio
+        chmod +x minio
+        sudo mv minio /usr/local/bin/
+
         sudo mkdir -p "$MINIO_DATA_BASE_DIR"
+        sudo chown -R $USER:$USER "$MINIO_DATA_BASE_DIR"
     else
         sudo mkdir -p "$MINIO_DATA_BASE_DIR"
         if systemctl is-active --quiet minio; then
@@ -502,9 +502,33 @@ echo "Environment '$environment' configured for domain '$domain_name'."
 echo "Project Root: $project_folder"
 minio_display_user="${minio_user:-minioadmin}" # Show default if var somehow unset
 if [ "$environment" == "local" ]; then
+    sudo usermod -aG "$WEB_USER" "$CURRENT_USER"
+    newgrp "$WEB_USER"
+    sudo chmod -R 775 "$project_folder"
+    sudo chmod +x "/home/$CURRENT_USER"
+    echo "Setting up local api and database..."; 
+    pushd "$project_folder/api" && composer install && popd
+    pushd "$project_folder/frontend" && npm install && popd
     echo ""; echo "Access URLs (local):"; echo "  Frontend: http://local.$domain_name"; echo "  API Base: http://local-api.$domain_name"
-     if [[ "$choices" == *"minio"* ]]; then echo "  Minio Console: http://local-storage.$domain_name"; echo "  Minio API: http://local-storage-api.$domain_name"; fi
+    if [[ "$choices" == *"minio"* ]]; then
+        echo ""; echo "MinIO Access (local):"; echo "  Console: http://local-storage.$domain_name"; echo "  API: http://local-storage-api.$domain_name"
+        echo "  User: $minio_display_user"
+        if [ -n "$minio_password" ]; then echo "  Password: $minio_password"; fi
+        if [ -n "$minio_gb_capacity" ]; then echo "  Storage Capacity: ${minio_gb_capacity}G"; fi
+    fi
+    
+    echo ""; echo "Don't forget to put these in your Windows Hosts if you're on WSL:"; 
+    echo " 127.0.0.1       local.$domain_name"; 
+    echo " 127.0.0.1       local-api.$domain_name";
+
+    if [[ "$choices" == *"minio"* ]]; then
+        echo " 127.0.0.1       local-storage.$domain_name";
+        echo " 127.0.0.1       local-storage-api.$domain_name";
+    fi
+
+    
 fi
+
 # Add note about supervisor status check
 if [[ "$choices" == *"redis"* ]]; then
     echo ""
